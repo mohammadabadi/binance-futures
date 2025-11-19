@@ -14,7 +14,7 @@
 ## 📁 ساختار پروژه
 
 ```
-futures-vue/
+binance-mock/
 ├── src/
 │   ├── components/
 │   │   ├── NavigationBar.vue
