@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+@theme {
+    /* Binance Futures exact colors */
+    --color-bg: #102821;
+    --color-nav-bg: #181a20;
+    --color-panel: #1e2026;
+    --color-panel-hover: #2b2f36;
+    --color-border: #2b2f36;
+    --color-border-light: #474d57;
+    --color-muted: #848e9c;
+    --color-text: #eaecf0;
+    --color-text-secondary: #b7bdc6;
+    --color-buy: #0ecb81;
+    --color-sell: #f6465d;
+    --color-yellow: #f0b90b;
+    --color-input-bg: #181a20;
+    --color-input-border: #2b2f36;
+    --color-active: #f0b90b;
+}
+
+@layer base {
+    :root {
+        color-scheme: dark;
+    }
+    * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+    }
+    body {
+        @apply bg-[--color-bg] text-[--color-text] antialiased;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+    }
+    button {
+        @apply transition-colors;
+        border: none;
+        background: none;
+        cursor: pointer;
+        font-family: inherit;
+    }
+    input, select {
+        @apply outline-none;
+        font-family: inherit;
+    }
+}
+
+@layer utilities {
+    .text-muted { color: var(--color-muted); }
+    .text-buy { color: var(--color-buy); }
+    .text-sell { color: var(--color-sell); }
+    .text-text { color: var(--color-text); }
+    .text-text-secondary { color: var(--color-text-secondary); }
+    .bg-panel { background-color: var(--color-panel); }
+    .bg-nav { background-color: var(--color-nav-bg); }
+    .bg-panel-hover:hover { background-color: var(--color-panel-hover); }
+    .border-panel { border-color: var(--color-border); }
+    .border-panel-light { border-color: var(--color-border-light); }
+    .font-mono { 
+        font-family: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
+        font-variant-numeric: tabular-nums;
+    }
+    .scrollable {
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        -webkit-overflow-scrolling: touch;
+    }
+    .scrollable::-webkit-scrollbar {
+        width: 6px;
+    }
+    .scrollable::-webkit-scrollbar-track {
+        background: var(--color-panel);
+    }
+    .scrollable::-webkit-scrollbar-thumb {
+        background: var(--color-border);
+        border-radius: 3px;
+    }
+    .scrollable::-webkit-scrollbar-thumb:hover {
+        background: var(--color-border-light);
+    }
+}
