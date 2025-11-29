@@ -6,29 +6,52 @@ const store = useMarketStore()
 const side = ref('buy')
 const marginMode = ref('Cross')
 const type = ref('Limit')
-const price = ref('91450.0')
+const price = ref('')
 const qty = ref('')
 const leverage = ref(20)
 const postOnly = ref(false)
 const reduceOnly = ref(false)
 const availableBalance = ref(100000)
 
-const notional = computed(() => (Number(price.value||0) * Number(qty.value||0)))
+const notional = computed(() => {
+  if (type.value === 'Market') {
+    return Number(qty.value || 0) * store.lastPrice
+  }
+  return Number(price.value || 0) * Number(qty.value || 0)
+})
 const margin = computed(() => (notional.value / Math.max(1, leverage.value)))
 const fee = computed(() => (notional.value * 0.0004))
 
 function submit() {
-  alert(`[DEMO] ${side.value.toUpperCase()} ${type.value} price=${price.value||'mkt'} qty=${qty.value}x leverage=${leverage.value}`)
+  if (type.value === 'Limit' && (!price.value || Number(price.value) <= 0)) {
+    alert('Please enter a valid price')
+    return
+  }
+  if (!qty.value || Number(qty.value) <= 0) {
+    alert('Please enter a valid quantity')
+    return
+  }
+  const orderPrice = type.value === 'Market' ? store.lastPrice : price.value
+  alert(`[DEMO] ${side.value.toUpperCase()} ${type.value} price=${orderPrice} qty=${qty.value} leverage=${leverage.value}`)
 }
 
 function setPrice(p) {
-  price.value = p.toString()
+  if (type.value === 'Limit') {
+    price.value = p.toString()
+  }
+}
+
+function setType(newType) {
+  type.value = newType
+  if (newType === 'Limit' && !price.value) {
+    price.value = store.lastPrice.toString()
+  }
 }
 </script>
 
 <template>
   <div style="padding: 16px;">
-    <!-- Margin Mode and Order Type -->
+    <!-- Margin Mode -->
     <div class="flex items-center gap-2 mb-3">
       <button 
         class="px-3 py-1.5 text-xs font-medium rounded transition-colors"
@@ -46,24 +69,28 @@ function setPrice(p) {
       >
         Isolated
       </button>
-      <div class="ml-auto flex items-center gap-2">
-        <button 
-          class="px-3 py-1.5 text-xs font-medium rounded transition-colors"
-          :class="type === 'Limit' ? 'bg-yellow/20 text-yellow border border-yellow' : 'bg-panel-hover text-muted hover:text-text'"
-          @click="type = 'Limit'"
-          style="font-size: 12px; padding: 6px 12px;"
-        >
-          Limit
-        </button>
-        <button 
-          class="px-3 py-1.5 text-xs font-medium rounded transition-colors"
-          :class="type === 'Market' ? 'bg-yellow/20 text-yellow border border-yellow' : 'bg-panel-hover text-muted hover:text-text'"
-          @click="type = 'Market'"
-          style="font-size: 12px; padding: 6px 12px;"
-        >
-          Market
-        </button>
-      </div>
+    </div>
+
+    <!-- Order Type Tabs: Limit / Market -->
+    <div class="flex gap-1 mb-3 border-b border-panel" style="border-bottom: 1px solid var(--color-border);">
+      <button 
+        class="px-4 py-2 text-sm font-medium relative transition-colors"
+        :class="type === 'Limit' ? 'text-yellow' : 'text-muted hover:text-text'"
+        @click="setType('Limit')"
+        style="font-size: 14px; padding: 8px 16px;"
+      >
+        Limit
+        <span v-if="type === 'Limit'" class="absolute bottom-0 left-0 right-0 h-0.5 bg-yellow" style="height: 2px;"></span>
+      </button>
+      <button 
+        class="px-4 py-2 text-sm font-medium relative transition-colors"
+        :class="type === 'Market' ? 'text-yellow' : 'text-muted hover:text-text'"
+        @click="setType('Market')"
+        style="font-size: 14px; padding: 8px 16px;"
+      >
+        Market
+        <span v-if="type === 'Market'" class="absolute bottom-0 left-0 right-0 h-0.5 bg-yellow" style="height: 2px;"></span>
+      </button>
     </div>
 
     <!-- Buy/Sell Tabs -->
@@ -94,20 +121,27 @@ function setPrice(p) {
       </div>
     </div>
 
-    <!-- Price -->
-    <div class="mb-3">
+    <!-- Price (only for Limit orders) -->
+    <div class="mb-3" v-if="type === 'Limit'">
       <label class="block text-xs text-muted mb-1" style="font-size: 12px;">Price (USDT)</label>
       <input 
         class="w-full bg-input-bg border border-input-border rounded px-3 py-2 text-sm font-mono text-text focus:border-yellow"
-        placeholder="Market Price"
+        placeholder="Enter price"
         v-model="price" 
-        :disabled="type==='Market'"
         style="font-size: 14px; padding: 8px 12px;"
       />
       <div class="flex gap-1 mt-1">
         <button @click="setPrice(store.lastPrice * 0.99)" class="text-xs text-muted hover:text-text" style="font-size: 11px;">-1%</button>
         <button @click="setPrice(store.lastPrice)" class="text-xs text-muted hover:text-text" style="font-size: 11px;">Mark</button>
         <button @click="setPrice(store.lastPrice * 1.01)" class="text-xs text-muted hover:text-text" style="font-size: 11px;">+1%</button>
+      </div>
+    </div>
+
+    <!-- Market Price Display (only for Market orders) -->
+    <div class="mb-3" v-if="type === 'Market'">
+      <label class="block text-xs text-muted mb-1" style="font-size: 12px;">Market Price</label>
+      <div class="w-full bg-input-bg border border-input-border rounded px-3 py-2 text-sm font-mono text-text" style="font-size: 14px; padding: 8px 12px;">
+        {{ store.lastPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }} USDT
       </div>
     </div>
 

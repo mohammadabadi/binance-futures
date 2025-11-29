@@ -60,27 +60,58 @@ export const useMarketStore = defineStore('market', {
         connectRealtime(realtime) {
             if (this._connected) return
             this._connected = true
+            
+            const handleReconnect = async (streamType) => {
+                if (streamType === 'orderbook' || streamType === 'ticker' || streamType === 'trades') {
+                    try {
+                        const { fetchTicker, fetchOrderBook, fetchTrades } = await import('../services/binanceApi')
+                        if (streamType === 'ticker') {
+                            const ticker = await fetchTicker(this.symbol)
+                            this.setTicker(ticker)
+                        } else if (streamType === 'orderbook') {
+                            const orderBook = await fetchOrderBook(this.symbol)
+                            this.setOrderBook(orderBook)
+                        } else if (streamType === 'trades') {
+                            const trades = await fetchTrades(this.symbol, 50)
+                            this.trades = []
+                            trades.forEach(t => this.pushTrade(t))
+                        }
+                    } catch (err) {
+                        console.error(`Failed to reload ${streamType} after reconnect:`, err)
+                    }
+                }
+            }
+            
             realtime.subscribeTicker((t) => {
-                this.setTicker(t)
+                if (t.price > 0) {
+                    this.setTicker(t)
+                }
             })
             realtime.subscribeOrderBook((ob) => {
-                this.setOrderBook(ob)
+                if (ob.bids && ob.bids.length > 0 || ob.asks && ob.asks.length > 0) {
+                    this.setOrderBook(ob)
+                }
             })
             realtime.subscribeTrades((tr) => {
-                this.pushTrade(tr)
+                if (tr.price > 0 && tr.qty > 0) {
+                    this.pushTrade(tr)
+                }
             })
             realtime.subscribeCandlesInit((list) => {
                 this.setCandles(list)
             })
             realtime.subscribeCandleUpdate((c) => {
-                const last = this.candles[this.candles.length - 1]
-                if (last && last.time === c.time) {
-                    this.updateLastCandle(c)
-                } else {
-                    this.candles.push(c)
-                    if (this.candles.length > 500) this.candles.shift()
+                if (c.close > 0) {
+                    const last = this.candles[this.candles.length - 1]
+                    if (last && last.time === c.time) {
+                        this.updateLastCandle(c)
+                    } else {
+                        this.candles.push(c)
+                        if (this.candles.length > 500) this.candles.shift()
+                    }
                 }
             })
+            realtime.subscribeReconnect(handleReconnect)
             realtime.start()
         },
     },

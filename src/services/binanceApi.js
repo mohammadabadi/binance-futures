@@ -60,7 +60,10 @@ export function createBinanceWebSocket(symbol = 'BTCUSDT') {
         orderbook: [],
         trades: [],
         candleUpdate: [],
+        reconnect: [],
     }
+    let orderBookSnapshot = { bids: [], asks: [] }
+    let lastUpdateId = null
 
     function connect(streamType, streamName) {
         try {
@@ -77,6 +80,12 @@ export function createBinanceWebSocket(symbol = 'BTCUSDT') {
 
             ws.onopen = () => {
                 reconnectAttempts[streamType] = 0
+
+                if (streamType === 'orderbook') {
+                    orderBookSnapshot = { bids: [], asks: [] }
+                    lastUpdateId = null
+                }
+
                 pingInterval = setInterval(() => {
                     if (ws.readyState === WebSocket.OPEN) {
                         try {
@@ -86,6 +95,10 @@ export function createBinanceWebSocket(symbol = 'BTCUSDT') {
                         }
                     }
                 }, 30000)
+
+                if (reconnectAttempts[streamType] > 0) {
+                    listeners.reconnect.forEach(fn => fn(streamType))
+                }
             }
 
             ws.onmessage = (event) => {
@@ -107,7 +120,10 @@ export function createBinanceWebSocket(symbol = 'BTCUSDT') {
                     clearInterval(pingInterval)
                     pingInterval = null
                 }
-                reconnect(streamType, streamName)
+
+                if (event.code !== 1000 && event.code !== 1001) {
+                    reconnect(streamType, streamName)
+                }
             }
         } catch (err) {
             console.error('WS connect error:', err)
@@ -120,7 +136,9 @@ export function createBinanceWebSocket(symbol = 'BTCUSDT') {
             reconnectAttempts[streamType] = 0
         }
         if (reconnectAttempts[streamType] >= maxReconnectAttempts) {
-            console.error('Max reconnect attempts reached')
+            console.error(`Max reconnect attempts reached for ${streamType}`)
+            reconnectAttempts[streamType] = 0
+            setTimeout(() => reconnect(streamType, streamName), 60000)
             return
         }
         reconnectAttempts[streamType]++
@@ -163,34 +181,101 @@ export function createBinanceWebSocket(symbol = 'BTCUSDT') {
 
     function handleMessage(streamType, data) {
         if (streamType === 'ticker') {
+            const price = parseFloat(data.c)
+            const changePercent = parseFloat(data.P)
+            const high = parseFloat(data.h)
+            const low = parseFloat(data.l)
+            const volume = parseFloat(data.v)
+
+            if (isNaN(price) || price === 0) return
+
             listeners.ticker.forEach(fn => fn({
-                price: parseFloat(data.c || 0),
-                changePercent: parseFloat(data.P || 0),
-                high: parseFloat(data.h || 0),
-                low: parseFloat(data.l || 0),
-                volume: parseFloat(data.v || 0),
+                price,
+                changePercent: isNaN(changePercent) ? 0 : changePercent,
+                high: isNaN(high) ? price : high,
+                low: isNaN(low) ? price : low,
+                volume: isNaN(volume) ? 0 : volume,
             }))
         } else if (streamType === 'orderbook') {
-            const bids = (data.b || []).map(([p, q]) => [parseFloat(p), parseFloat(q)])
-            const asks = (data.a || []).map(([p, q]) => [parseFloat(p), parseFloat(q)])
-            listeners.orderbook.forEach(fn => fn({ bids, asks }))
+            const updateId = data.u || data.lastUpdateId
+
+            if (lastUpdateId === null) {
+                lastUpdateId = updateId
+            } else if (updateId < lastUpdateId) {
+                return
+            }
+
+            lastUpdateId = updateId
+
+            const bids = (data.b || []).map(([p, q]) => [parseFloat(p), parseFloat(q)]).filter(([p, q]) => p > 0 && q > 0)
+            const asks = (data.a || []).map(([p, q]) => [parseFloat(p), parseFloat(q)]).filter(([p, q]) => p > 0 && q > 0)
+
+            if (bids.length === 0 && asks.length === 0) return
+
+            const bidsMap = new Map(orderBookSnapshot.bids)
+            const asksMap = new Map(orderBookSnapshot.asks)
+
+            bids.forEach(([price, qty]) => {
+                if (qty === 0) {
+                    bidsMap.delete(price)
+                } else {
+                    bidsMap.set(price, qty)
+                }
+            })
+
+            asks.forEach(([price, qty]) => {
+                if (qty === 0) {
+                    asksMap.delete(price)
+                } else {
+                    asksMap.set(price, qty)
+                }
+            })
+
+            const sortedBids = Array.from(bidsMap.entries())
+                .sort(([a], [b]) => b - a)
+                .slice(0, 20)
+                .map(([p, q]) => [p, q])
+
+            const sortedAsks = Array.from(asksMap.entries())
+                .sort(([a], [b]) => a - b)
+                .slice(0, 20)
+                .map(([p, q]) => [p, q])
+
+            orderBookSnapshot = { bids: sortedBids, asks: sortedAsks }
+
+            if (sortedBids.length > 0 || sortedAsks.length > 0) {
+                listeners.orderbook.forEach(fn => fn({ bids: sortedBids, asks: sortedAsks }))
+            }
         } else if (streamType === 'trades') {
+            const price = parseFloat(data.p)
+            const qty = parseFloat(data.q)
+
+            if (isNaN(price) || price === 0 || isNaN(qty) || qty === 0) return
+
             listeners.trades.forEach(fn => fn({
                 side: data.m ? 'sell' : 'buy',
-                price: parseFloat(data.p || 0),
-                qty: parseFloat(data.q || 0),
+                price,
+                qty,
                 time: data.T || Date.now(),
             }))
         } else if (streamType === 'kline') {
             if (data.k && data.k.x) {
                 const k = data.k
+                const open = parseFloat(k.o)
+                const high = parseFloat(k.h)
+                const low = parseFloat(k.l)
+                const close = parseFloat(k.c)
+                const volume = parseFloat(k.v)
+
+                if (isNaN(close) || close === 0) return
+
                 listeners.candleUpdate.forEach(fn => fn({
                     time: Math.floor(k.t / 1000),
-                    open: parseFloat(k.o),
-                    high: parseFloat(k.h),
-                    low: parseFloat(k.l),
-                    close: parseFloat(k.c),
-                    volume: parseFloat(k.v),
+                    open: isNaN(open) ? close : open,
+                    high: isNaN(high) ? close : high,
+                    low: isNaN(low) ? close : low,
+                    close,
+                    volume: isNaN(volume) ? 0 : volume,
                 }))
             }
         }
@@ -201,10 +286,27 @@ export function createBinanceWebSocket(symbol = 'BTCUSDT') {
         subscribeOrderBook(fn) { listeners.orderbook.push(fn) },
         subscribeTrades(fn) { listeners.trades.push(fn) },
         subscribeCandleUpdate(fn) { listeners.candleUpdate.push(fn) },
+        subscribeReconnect(fn) { listeners.reconnect.push(fn) },
         subscribeCandlesInit() {}, // Initial candles loaded via REST
         start() {
             startConnections()
         },
-        stop() {},
+        stop() {
+            Object.keys(connections).forEach(key => {
+                if (key === '_klinePoll') {
+                    if (connections[key].interval) {
+                        clearInterval(connections[key].interval)
+                    }
+                } else if (connections[key] && connections[key].close) {
+                    connections[key].close()
+                }
+            })
+            Object.values(reconnectTimers).forEach(timer => {
+                if (timer) clearTimeout(timer)
+            })
+            connections = {}
+            reconnectTimers = {}
+            reconnectAttempts = {}
+        },
     }
 }
